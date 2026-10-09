@@ -107,6 +107,7 @@ h2{font-family:var(--display);font-weight:400;font-size:clamp(32px,6vw,46px);mar
 .chips span{font-size:19px;margin-right:4px}
 .chip{border:2px solid var(--ink);background:#fff;border-radius:20px;padding:4px 16px;font-size:19px;color:var(--ink)}
 .chip.on{background:var(--yellow)}
+.chip[data-diff=hard].on{background:var(--red);color:#fff}
 .winart{width:min(240px,70%);margin:0 auto;display:block}
 @media (prefers-reduced-motion: reduce){ .cbtn.ready{animation:none} }
 </style>
@@ -531,7 +532,9 @@ function makeObstacle(o){const d=OBST[o.type];
 let SAVE={done:0,diff:'easy'};
 try{const s=localStorage.getItem('saveKingLiam');if(s)SAVE=Object.assign(SAVE,JSON.parse(s))}catch(e){}
 function persist(){try{localStorage.setItem('saveKingLiam',JSON.stringify(SAVE))}catch(e){}}
-const DIFF={easy:{take:.5,revive:5},normal:{take:.85,revive:8}};
+const DIFF={easy:{take:.5,revive:5,ehp:1,ecd:1,espd:1,extra:0,drop:1,small:1},normal:{take:.85,revive:8,ehp:1,ecd:1,espd:1,extra:0,drop:1,small:1},
+  hard:{take:1.35,revive:1e9,ehp:1.45,ecd:.7,espd:1.2,extra:1,drop:.45,small:.5,lives:3}};
+const HARD=()=>SAVE.diff==='hard';
 
 /* ---------- state ---------- */
 const G={mode:'menu',t:0,dt:0,heroes:[],bads:[],projs:[],shocks:[],fx:[],pickups:[],banners:[],
@@ -545,7 +548,8 @@ function makeBad(k,x,y,wave,boss){const d=BADS[k];const hpMul=1+.12*G.levelIdx;
     walk:Math.random()*6,amp:0,ko:false,koT:0,scale:1,w:d.w,h:d.h,wave,think:Math.random()*.3,inp:{},ledge:!!d.ledge,pwCD:3,flash:0};
   if(boss){f.boss=boss;f.scale=boss.scale;f.hp=f.maxHp=Math.round(boss.hp*(1+.05*G.levelIdx));f.speedMul=.9;f.atkCD=1.5}
   else f.hp=f.maxHp=Math.round(d.hp*hpMul);
-  f.hpShow=f.hp;if(f.ledge)f.atkCD=rand(1,2.4);
+  const D=DIFF[SAVE.diff];f.hp=f.maxHp=Math.round(f.hp*D.ehp);f.speedMul=(f.speedMul||1)*D.espd;
+  f.hpShow=f.hp;if(f.ledge)f.atkCD=rand(1,2.4)*D.ecd;
   G.bads.push(f);return f}
 
 function startLevel(i,leaderId){
@@ -570,7 +574,7 @@ function startLevel(i,leaderId){
   G.prisoner=lv.final?null:{def:heroById(lv.prisoner),x:G.cageX,y:GROUND-24,vy:0,facing:-1,scale:1,walk:0,amp:0,act:null,chained:true,free:false};
   G.town=[];G.flip=0;G.flipSaid=false;
   buildScenery(lv);
-  G.wipeT=0;G.mode='level';G.paused=false;hideOverlay();document.body.classList.add('playing');
+  G.wipeT=0;G.lives=HARD()?DIFF.hard.lives:0;G.mode='level';G.paused=false;hideOverlay();document.body.classList.add('playing');
   banner(`Level ${i+1}: ${lv.name}`,lv.final?'Beat the Bad King and take his castle!':`Free ${heroById(lv.prisoner).name}!`,2.6);
   SAVE.lastLeader=order[0].id;persist();
 }
@@ -986,7 +990,7 @@ function hurt(att,tgt,dmg,kbx,kby,word){
   if(att&&att.team==='hero'&&att!==G.leader)dmg*=.6;
   if(att&&att.team==='hero'&&att.pow){if(att.pow.giant)dmg*=2;if(att.pow.fire){dmg*=1.5;sparks(tgt.x,cy(tgt),5,[C.orange,C.red,C.yellow])}}
   const tough=tgt.team==='hero'&&tgt.pow.giant;if(tough)dmg*=.5;
-  if(tgt.team==='hero'){dmg*=DIFF[SAVE.diff].take*(tgt===G.leader?1:.55)*(G.heroes.length<=1?.55:G.heroes.length===2?.75:1);tgt.invT=tgt===G.leader?.45:.3}
+  if(tgt.team==='hero'){dmg*=DIFF[SAVE.diff].take*(tgt===G.leader?1:HARD()?.85:.55)*(1-(1-(G.heroes.length<=1?.55:G.heroes.length===2?.75:1))*DIFF[SAVE.diff].small);tgt.invT=tgt===G.leader?.45:.3}
   tgt.hp=Math.max(0,tgt.hp-dmg);tgt.flash=.12;
   if(tgt.boss){tgt.vx+=kbx*.08}
   else if(!tgt.ledge&&!tgt.grabbedBy&&!tough){tgt.hurtT=.25;if(tgt.act&&!tgt.act.armor){if(tgt.act.grab)tgt.act.grab.grabbedBy=null;tgt.act=null}
@@ -1006,11 +1010,13 @@ function knockOut(t,kbx){
   t.vy=-380;t.grounded=false;t.vx=(kbx>=0?1:-1)*200;
   if(t.team==='bad'){
     if(t.boss){sfx.ko();shake(.5,12);G.slow=.9;addFx({k:'txt',x:t.x,y:t.y-t.h*t.scale-20,txt:'K.O.!',col:C.red,life:1.4,rot:-.08})}
-    else{const q=Math.random();if(q<.15)spawnPickup('heart',t.x).drop=true;else if(q<.22)spawnPickup(rollLoot(true),t.x,GROUND-70,true).drop=true}
+    else{const q=Math.random()/DIFF[SAVE.diff].drop;if(q<.15)spawnPickup('heart',t.x).drop=true;else if(q<.22)spawnPickup(rollLoot(true),t.x,GROUND-70,true).drop=true}
   }else{sfx.ko();if(t===G.leader)autoLeader()}
 }
 function autoLeader(){const alive=G.heroes.filter(h=>!h.ko);
-  if(!alive.length){if(SAVE.diff==='easy'){G.wipeT=2.2;banner('Get back up, heroes!','',1.8)}else{G.phase='fail';G.phaseT=0}return}
+  if(!alive.length){if(SAVE.diff==='easy'){G.wipeT=2.2;banner('Get back up, heroes!','',1.8)}
+    else if(HARD()&&G.lives>1){G.lives--;G.wipeT=2.4;banner(`Lost a life!`,`${G.lives} ${G.lives===1?'life':'lives'} left`,2)}
+    else{G.lives=0;G.phase='fail';G.phaseT=0}return}
   alive.sort((a,b)=>Math.abs(a.x-G.leader.x)-Math.abs(b.x-G.leader.x));
   G.leader=alive[0];G.leader.inp={};banner(`Now playing ${G.leader.def.name}`,'',1.6)}
 
@@ -1101,9 +1107,9 @@ const SPECIALS={
 /* bad guy attacks */
 function startBadAttack(f){const d=f.def;
   f.act={kind:'atk',t:0,dur:d.dur*(f.boss?1.15:1),hitAt:d.wind*(f.boss?1.15:1),done:false};
-  f.atkCD=rand(d.cd[0],d.cd[1])+f.act.dur;}
+  f.atkCD=rand(d.cd[0],d.cd[1])*DIFF[SAVE.diff].ecd+f.act.dur;}
 function startBossPower(f){let p=f.boss.power;if(p==='king')p=['slam','charge','orbs'][Math.floor(Math.random()*3)];
-  f.act={kind:'pw',p,t:0,dur:p==='slam'?1.5:p==='spin'?1.8:p==='orbs'?1.4:1.6,armor:true,hits:new Set(),next:.45};f.pwCD=rand(4.5,6.2)}
+  f.act={kind:'pw',p,t:0,dur:p==='slam'?1.5:p==='spin'?1.8:p==='orbs'?1.4:1.6,armor:true,hits:new Set(),next:.45};f.pwCD=rand(4.5,6.2)*(HARD()?.75:1)}
 function doBadAttack(f,a){const d=f.def;if(!f.ledge)f.vx=0;
   if(a.done||a.t<a.hitAt)return;a.done=true;
   if(f.kind==='cross'){const t=nearestFoe(f,900,false);if(!t)return;const sx=f.x+f.facing*40,sy=f.y-56;
@@ -1214,7 +1220,10 @@ function physics(f,dt){
 function updateWaves(dt){
   const lv=G.level,L=G.leader;
   if(!G.lock&&G.waveIdx<lv.waves.length){const w=lv.waves[G.waveIdx];
-    if(L.x>w.x-200){G.lock=w;G.goT=0;G.spawnQ=w.ground.slice(0,Math.max(2,G.heroes.length+1)).map((k,i)=>({k,t:.2+i*.7}));
+    if(L.x>w.x-200){G.lock=w;G.goT=0;let gl=w.ground.slice(0,Math.max(2,G.heroes.length+1));
+      if(HARD()){const want=Math.max(w.ground.length+DIFF.hard.extra,Math.round(G.heroes.length*1.4)+1+Math.floor(G.levelIdx/2));gl=[];
+        for(let i=0;i<want;i++){let k=w.ground[i%w.ground.length];if(i>=w.ground.length&&i%2)k=k.endsWith('<')?k.slice(0,-1):k+'<';gl.push(k)}}
+      G.spawnQ=gl.map((k,i)=>({k,t:.2+i*(HARD()?.45:.7)}));
       if(w.boss){G.spawnQ.push({k:w.boss.base,boss:w.boss,t:.4});banner(w.boss.name+'!','',2)}}}
   if(G.lock){const w=G.lock;
     for(const s of G.spawnQ){s.t-=dt;if(s.t<=0&&!s.done){s.done=true;const left=s.k.endsWith('<');const k=s.k.replace('<','');
@@ -1230,6 +1239,7 @@ function updateWaves(dt){
     else G.ledgeT=0;
     if(!G.spawnQ.length&&!G.bads.some(b=>b.wave===G.waveIdx&&!b.ko)){
       G.lock=null;G.waveIdx++;
+      if(HARD())for(const h of G.heroes)if(h.ko){reviveHero(h);h.hp=h.maxHp*.5}
       if(w.boss&&G.level.final)startVictory();
       else if(w.boss){G.cageReady=true;banner(`Free ${G.prisoner.def.name}!`,'Run to the cage',2.4)}
       else{G.goT=4;if(G.heroes.some(h=>!h.ko&&h.hp<h.maxHp*.6))spawnPickup('heart',clamp(L.x+90,G.camX+60,G.camX+VW-60)).drop=true}}}
@@ -1439,6 +1449,8 @@ function drawHUD(){
     drawPowerIcon(k,ix,iy,.62)});
   X.font=`22px ${FONT_BIG}`;X.textAlign='right';X.lineWidth=5;X.strokeStyle=C.paper;const lt=PORT()?`Level ${G.levelIdx+1}`:`Level ${G.levelIdx+1}: ${G.level.name}`;
   const lx=VW-84;X.strokeText(lt,lx,32);X.fillStyle='#2c3337';X.fillText(lt,lx,32);
+  if(HARD()){for(let i=0;i<DIFF.hard.lives;i++){X.save();X.globalAlpha=i<G.lives?1:.22;drawPowerIcon('heart',lx-12-i*28,58,.62);X.restore()}
+    X.font=`18px ${FONT_BIG}`;X.textAlign='right';X.lineWidth=4;X.strokeStyle=C.paper;X.strokeText('HARD',lx-12-DIFF.hard.lives*28,64);X.fillStyle=C.red;X.fillText('HARD',lx-12-DIFF.hard.lives*28,64)}
   // boss bar
   const boss=G.bads.find(b=>b.boss&&!b.ko);
   if(boss){const bw2=Math.min(440,VW-80),bx=(VW-bw2)/2,by=H-40,fr=Math.max(0,boss.hpShow/boss.maxHp);
@@ -1556,7 +1568,7 @@ let pickLevel=0;
 function showPick(i){pickLevel=i;const first=!SAVE.owned.length;const team=first?HEROES.filter(h=>ORIG.includes(h.id)):HEROES.filter(h=>SAVE.owned.includes(h.id)&&h.id!==LEVELS[i].prisoner);
   showOverlay(`<div class="sheet"><h2>${first?'Pick your first hero':'Who leads the team?'}</h2>
   <p class="lede">${first?'You start on your own. Find hero cards along the way to build your team!':'You control the leader. Everyone else fights alongside, and you can switch heroes any time.'}</p>
-  <div class="chips"><span>How tough:</span>${['easy','normal'].map(d=>`<button class="chip ${SAVE.diff===d?'on':''}" data-diff="${d}">${d==='easy'?'Easy':'Normal'}</button>`).join('')}</div>
+  <div class="chips"><span>How tough:</span>${['easy','normal','hard'].map(d=>`<button class="chip ${SAVE.diff===d?'on':''}" data-diff="${d}">${{easy:'Easy',normal:'Normal',hard:'Hard'}[d]}</button>`).join('')}</div>
   <div class="cards">${team.map(d=>`<button class="card" data-pick="${d.id}"><canvas data-art="hero" data-id="${d.id}"></canvas>
     <div class="nm">${d.name}</div><div class="desc">${d.blurb}</div><div class="sp">★ ${d.special.name}</div></button>`).join('')}</div>
   <button class="link" data-act="map">Back to the map</button></div>`)}
