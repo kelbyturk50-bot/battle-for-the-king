@@ -108,6 +108,25 @@ h2{font-family:var(--display);font-weight:400;font-size:clamp(32px,6vw,46px);mar
 .chip{border:2px solid var(--ink);background:#fff;border-radius:20px;padding:4px 16px;font-size:19px;color:var(--ink)}
 .chip.on{background:var(--yellow)}
 .chip[data-diff=hard].on{background:var(--red);color:#fff}
+.chip[data-diff=impossible].on{background:#2c3337;color:var(--yellow)}
+.who{font-size:20px;margin:2px 0 10px;color:#4b555a}
+.link.inline{display:inline;margin:0 0 0 6px;font-size:18px}
+.score{font-family:var(--display);font-size:28px;letter-spacing:1px;color:#b08300;margin:4px 0}
+.score b{color:var(--red);font-weight:400}
+.note{font-size:16px;color:#6a7479;margin:12px auto 0;max-width:34em}
+.newp{margin:18px auto 0;max-width:420px}
+.newp label{display:block;font-size:20px;margin-bottom:6px}
+.newp .row{margin-top:0;flex-wrap:nowrap}
+.newp input{flex:1;min-width:0;font:inherit;font-size:22px;padding:8px 12px;border:3px solid var(--ink);border-radius:12px;color:var(--ink);background:#fff}
+.newp input:focus-visible{outline:3px solid var(--orange);outline-offset:2px}
+.plist .card{justify-content:center;min-height:110px}
+.board{list-style:none;padding:0;margin:10px auto;max-width:520px;text-align:left}
+.board li{display:flex;align-items:center;gap:12px;padding:10px 14px;border:3px solid var(--ink);border-radius:14px;margin-bottom:8px;background:#fff;font-size:21px}
+.board li.me{background:#fff4c2}
+.board .rk{width:34px;text-align:center;font-family:var(--display);font-size:24px}
+.board .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board .pa{font-size:15px;color:var(--red)}
+.board .ps{font-family:var(--display);font-size:22px;color:#b08300;font-variant-numeric:tabular-nums}
 .winart{width:min(240px,70%);margin:0 auto;display:block}
 @media (prefers-reduced-motion: reduce){ .cbtn.ready{animation:none} }
 </style>
@@ -461,6 +480,7 @@ const BADS={
  muscle:{name:'Muscle Man',hp:75,speed:105,range:96,dmg:13,wind:.45,dur:.8,cd:[1.3,2],w:50,h:132,draw:drawBMuscle},
  cross:{name:'Bad Crossbow',hp:24,ledge:true,dmg:7,wind:.5,dur:.75,cd:[2.4,3.4],w:30,h:92,draw:drawBCross},
  bomb:{name:'Bomb Thrower',hp:24,ledge:true,dmg:12,wind:.55,dur:.8,cd:[3,4.2],w:34,h:96,draw:drawBBomb},
+ dragon:{name:'The Dragon',hp:500,speed:0,range:0,dmg:14,wind:1,dur:1,cd:[2,3],w:230,h:150,draw:drawDragon},
  king:{name:'The Bad King',hp:300,speed:100,range:130,dmg:14,wind:.55,dur:.95,cd:[1.3,1.9],w:56,h:205,draw:drawBadKing},
 };
 
@@ -529,12 +549,24 @@ function makeObstacle(o){const d=OBST[o.type];
 
 
 /* ---------- saved progress (this browser only) ---------- */
-let SAVE={done:0,diff:'easy'};
-try{const s=localStorage.getItem('saveKingLiam');if(s)SAVE=Object.assign(SAVE,JSON.parse(s))}catch(e){}
-function persist(){try{localStorage.setItem('saveKingLiam',JSON.stringify(SAVE))}catch(e){}}
+const newSave=()=>({done:0,diff:'easy',owned:[],loop:0,rev:0});
+let PROF={cur:null,players:{}};
+const uid=()=>Math.random().toString(36).slice(2,10);
+try{const pj=localStorage.getItem('sklProfiles');if(pj)PROF=JSON.parse(pj);
+  else{const s=localStorage.getItem('saveKingLiam');if(s){const id=uid();PROF.players[id]={id,name:'Player 1',save:Object.assign(newSave(),JSON.parse(s)),best:[],high:0,updated:Date.now()};PROF.cur=id;localStorage.setItem('sklProfiles',JSON.stringify(PROF))}}}catch(e){}
+if(!PROF.players)PROF={cur:null,players:{}};if(PROF.cur&&!PROF.players[PROF.cur])PROF.cur=null;
+let SAVE=PROF.cur?PROF.players[PROF.cur].save:newSave();
+const curP=()=>PROF.players[PROF.cur];
+function persist(){const p=curP();if(p){p.save=SAVE;p.updated=Date.now()}try{localStorage.setItem('sklProfiles',JSON.stringify(PROF))}catch(e){};if(p)queueSync()}
 const DIFF={easy:{take:.5,revive:5,ehp:1,ecd:1,espd:1,extra:0,drop:1,small:1},normal:{take:.85,revive:8,ehp:1,ecd:1,espd:1,extra:0,drop:1,small:1},
-  hard:{take:1.35,revive:1e9,ehp:1.45,ecd:.7,espd:1.2,extra:1,drop:.45,small:.5,lives:3}};
-const HARD=()=>SAVE.diff==='hard';
+  hard:{take:1.35,revive:1e9,ehp:1.45,ecd:.7,espd:1.2,extra:1,drop:.45,small:.5,lives:3,crowd:1.4},
+  impossible:{take:2.1,revive:1e9,ehp:2.2,ecd:.5,espd:1.35,extra:2,drop:.18,small:.2,lives:1,crowd:1.9}};
+const SCORE_X={easy:1,normal:1.5,hard:2,impossible:3};
+const DIFF_NAME={easy:'Easy',normal:'Normal',hard:'Hard',impossible:'Impossible'};
+const HARD=()=>SAVE.diff==='hard'||SAVE.diff==='impossible';
+const LOOP=()=>SAVE.loop||0;
+const loopHp=()=>1+.35*LOOP(),loopDmg=()=>1+.2*LOOP(),loopSpd=()=>Math.min(1.4,1+.06*LOOP()),loopCd=()=>1/(1+.12*LOOP());
+const scoreMult=()=>(SCORE_X[SAVE.diff]||1)*(1+.5*LOOP());
 
 /* ---------- state ---------- */
 const G={mode:'menu',t:0,dt:0,heroes:[],bads:[],projs:[],shocks:[],fx:[],pickups:[],banners:[],
@@ -548,8 +580,8 @@ function makeBad(k,x,y,wave,boss){const d=BADS[k];const hpMul=1+.12*G.levelIdx;
     walk:Math.random()*6,amp:0,ko:false,koT:0,scale:1,w:d.w,h:d.h,wave,think:Math.random()*.3,inp:{},ledge:!!d.ledge,pwCD:3,flash:0};
   if(boss){f.boss=boss;f.scale=boss.scale;f.hp=f.maxHp=Math.round(boss.hp*(1+.05*G.levelIdx));f.speedMul=.9;f.atkCD=1.5}
   else f.hp=f.maxHp=Math.round(d.hp*hpMul);
-  const D=DIFF[SAVE.diff];f.hp=f.maxHp=Math.round(f.hp*D.ehp);f.speedMul=(f.speedMul||1)*D.espd;
-  f.hpShow=f.hp;if(f.ledge)f.atkCD=rand(1,2.4)*D.ecd;
+  const D=DIFF[SAVE.diff];f.hp=f.maxHp=Math.round(f.hp*D.ehp*loopHp());f.speedMul=(f.speedMul||1)*D.espd*loopSpd();
+  f.hpShow=f.hp;if(f.ledge)f.atkCD=rand(1,2.4)*D.ecd*loopCd();
   G.bads.push(f);return f}
 
 function startLevel(i,leaderId){
@@ -574,7 +606,7 @@ function startLevel(i,leaderId){
   G.prisoner=lv.final?null:{def:heroById(lv.prisoner),x:G.cageX,y:GROUND-24,vy:0,facing:-1,scale:1,walk:0,amp:0,act:null,chained:true,free:false};
   G.town=[];G.flip=0;G.flipSaid=false;
   buildScenery(lv);
-  G.wipeT=0;G.lives=HARD()?DIFF.hard.lives:0;G.mode='level';G.paused=false;hideOverlay();document.body.classList.add('playing');
+  G.wipeT=0;G.lives=HARD()?DIFF[SAVE.diff].lives:0;G.score=0;G.dragonDone=false;G.roof=false;G.flash=0;G.mode='level';G.paused=false;hideOverlay();document.body.classList.add('playing');
   banner(`Level ${i+1}: ${lv.name}`,lv.final?'Beat the Bad King and take his castle!':`Free ${heroById(lv.prisoner).name}!`,2.6);
   SAVE.lastLeader=order[0].id;persist();
 }
@@ -609,6 +641,7 @@ function collect(k,L){const P=POWERS[k.kind];
   addFx({k:'txt',x:L.x,y:L.y-170*L.scale,txt:P.name.toUpperCase()+'!',col:P.col,life:1,rot:-.05})}
 function updatePickups(dt){const L=G.leader;
   for(const k of G.pickups){k.t+=dt;
+    if(k.falling){k.vy+=900*dt;k.y+=k.vy*dt;if(k.y>=GROUND-26){k.y=GROUND-26;k.falling=false}}
     if(k.popping){k.vy+=1500*dt;k.x+=k.vx*dt;k.y+=k.vy*dt;if(k.vy>0&&k.y>=GROUND-26){k.y=GROUND-26;k.popping=false}}
     if(G.phase!=='play'||k.dead||(k.popping&&k.t<.3))continue;
     if(Math.abs(k.x-L.x)<46&&Math.abs((L.y-60*L.scale)-k.y)<95){k.dead=true;
@@ -617,11 +650,11 @@ function updatePickups(dt){const L=G.leader;
     if(k.drop&&k.t>16)k.dead=true}
   G.pickups=G.pickups.filter(k=>!k.dead);
   if(G.phase!=='play')return;
-  for(const c of G.chests){c.t+=dt;if(!c.open&&Math.abs(c.x-L.x)<50&&L.y>GROUND-60){c.open=true;c.t=0;sfx.chest();
+  for(const c of G.chests){c.t+=dt;if(!c.open&&Math.abs(c.x-L.x)<50&&L.y>GROUND-60){c.open=true;c.t=0;sfx.chest();addScore(100,c.x,GROUND-140);
       sparks(c.x,GROUND-40,14,[C.gold,C.yellow,'#fff']);spawnPickup(rollLoot(),c.x,GROUND-60,true);
       addFx({k:'txt',x:c.x,y:GROUND-110,txt:'TREASURE!',col:C.gold,life:.9,rot:-.05})}}
   for(const q of G.qboxes){q.bump=Math.max(0,q.bump-dt);const head=L.y-125*L.scale;
-    if(!q.used&&L.vy<0&&Math.abs(L.x-q.x)<38&&head<q.y+24&&head>q.y-40){q.used=true;q.bump=.25;L.vy=80;sfx.chest();
+    if(!q.used&&L.vy<0&&Math.abs(L.x-q.x)<38&&head<q.y+24&&head>q.y-40){q.used=true;q.bump=.25;addScore(50,q.x,q.y-50);L.vy=80;sfx.chest();
       sparks(q.x,q.y-22,10,[C.yellow,'#fff']);spawnPickup(rollLoot(true),q.x,q.y-30,true)}}
 }
 function updatePowers(f,dt){
@@ -708,7 +741,8 @@ LEVELS.forEach((lv,i)=>{const S=300,C0=2380,sh=x=>x>C0?x+S:x;
   if(lv.sword)lv.sword=sh(lv.sword);
   lv.waves.forEach(w=>{w.x=sh(w.x);(w.ledges||[]).forEach(l=>l[1]=sh(l[1]))});
   const st=CARD_SPOTS[i];lv.card={style:st,x:{ladder:2390,crates:2370,mushroom:2470}[st]}});
-if(!Array.isArray(SAVE.owned)){SAVE.owned=SAVE.done>0?[...ORIG,...LEVELS.slice(0,SAVE.done).map(l=>l.prisoner).filter(Boolean)]:[];persist()}
+function normalizeSave(sv){if(!Array.isArray(sv.owned))sv.owned=sv.done>0?[...ORIG,...LEVELS.slice(0,sv.done).map(l=>l.prisoner).filter(Boolean)]:[];sv.loop=sv.loop||0;sv.rev=sv.rev||0;if(!DIFF[sv.diff])sv.diff='easy';return sv}
+normalizeSave(SAVE);
 function solvable(o,ids){return OBST[o.type].need.some(n=>ids.includes(n))}
 function planObstacles(lv,ids,cardId){const used=new Set();
   const sig=(id,x)=>{const t=SIG[id];return t==='heavy'?{type:'heavy',style:lv.theme==='castle'?'gate':'boulder',x}:{type:t,x}};
@@ -732,7 +766,7 @@ function joinHero(id,x,y){const def=heroById(id),h=makeHero(def,x,G.heroes.lengt
 function updateCards(dt){const c=G.card,L=G.leader;if(G.shroom)G.shroom.sq=Math.max(0,G.shroom.sq-dt);
   if(!c||c.got)return;c.t+=dt;
   if(!c.hinted&&!G.lock&&L.x>c.x-400){c.hinted=true;banner('A hero card!',CARD_HINT[c.style],3.4)}
-  if(G.phase==='play'&&Math.abs(L.x-c.x)<44&&Math.abs((L.y-60*L.scale)-c.y)<78){c.got=true;sfx.win();shake(.2,5);
+  if(G.phase==='play'&&Math.abs(L.x-c.x)<44&&Math.abs((L.y-60*L.scale)-c.y)<78){c.got=true;sfx.win();addScore(500,c.x,c.y-90);shake(.2,5);
     const d=heroById(c.id);joinHero(c.id,c.x,c.y+40);banner(`${d.name} joins the team!`,`Tap ${d.name}'s picture to play as them`,3.2);
     addFx({k:'txt',x:c.x,y:c.y-40,txt:'NEW HERO!',col:C.gold,life:1.4,rot:-.05})}}
 function drawCardSpot(){
@@ -761,6 +795,85 @@ function drawCardSpot(){
   if(Math.floor(G.t*4)%2)star(c.x+34,c.y-40+b,6,'#fff',null);
   bigText('NEW HERO!',c.x,c.y-66+b,22,C.yellow,-.04)}
 
+/* ---------- the dragon on the castle roof ---------- */
+const SHOOT_KINDS=new Set(['bolt','bullet','arrow','pellet','power']);
+function dragonHurtOK(att){return att&&att.team==='hero'&&att.pow&&att.pow.fire&&att.def.ranged&&SHOOT_KINDS.has(G.shotKind)}
+function dragonBlock(att,tgt){sparks(tgt.x,cy(tgt),3,['#ccc','#fff']);
+  if(att===G.leader&&G.t-(tgt.blockT||0)>1){tgt.blockT=G.t;sfx.clink();
+    const msg=!att.def.ranged?'Too tough! Use a shooter':!(att.pow&&att.pow.fire)?'Too tough! Grab a Fire Gem':'Shoot it!';
+    addFx({k:'txt',x:tgt.x,y:tgt.y-170,txt:msg,col:C.yellow,life:1.1,rot:-.04})}}
+function startDragon(){G.roof=true;G.flash=1;G.gemT=0;sfx.boom();shake(.6,12);
+  const x0=G.level.len-VW;G.camX=x0;G.projs=[];G.shocks=[];G.pickups=G.pickups.filter(k=>k.kind==='sword');
+  G.heroes.forEach((h,i)=>{if(h.ko)reviveHero(h);h.inp={};h.act=null;h.y=GROUND;h.vy=0;h.x=x0+110+i*32});
+  G.lock={x:G.level.len-VW/2,ground:[],dragon:true};G.spawnQ=[];
+  const d=makeBad('dragon',x0+VW-190,GROUND-215,G.waveIdx,{name:'The Dragon',scale:.85,hp:400,power:'dragon'});
+  Object.assign(d,{dragon:true,fly:true,st:'fly',stT:2.5,tx:x0+VW-190,facing:-1,flap:0,hits:new Set()});
+  banner('The Bad King’s dragon!','Grab a Fire Gem, then shoot it with a shooter',3.8);
+  spawnPickup('fire',x0+Math.min(VW/2,360),GROUND-26)}
+function dragonFire(f,tx,ty,spd,spread){const mx=f.x+f.facing*150*f.scale,my=f.y-150*f.scale;
+  const a=Math.atan2(ty-my,tx-mx)+rand(-spread,spread);
+  addProj({x:mx,y:my,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,grav:260,team:'bad',owner:f,dmg:8,kind:'dfire',life:3,kb:200})}
+function updateDragon(f,dt){
+  const L=G.leader,sp=f.speedMul||1,lo=G.camX+150,hiX=G.camX+VW-150,top=GROUND-215;
+  if(f.st==='fly')f.stT-=dt;f.flap+=dt*(f.st==='swoop'?15:8);
+  const hpR=f.hp/f.maxHp;
+  if(hpR<.66&&!f.s1){f.s1=1;G.spawnQ.push({k:'ax',t:.1},{k:'ax<',t:.6});banner('The dragon calls for help!','',1.6)}
+  if(hpR<.33&&!f.s2){f.s2=1;G.spawnQ.push({k:'hammer',t:.1},{k:'ax<',t:.6})}
+  if(f.st==='fly'){const d=f.tx-f.x;f.x+=Math.sign(d)*Math.min(Math.abs(d),170*sp*dt);
+    f.y+=(top+Math.sin(G.t*2)*18-f.y)*Math.min(1,dt*3);f.facing=L.x>f.x?1:-1;
+    if(f.stT<=0){const opts=hpR<.5?['breath','swoop','rain']:['breath','swoop','breath'];f.st=opts[Math.floor(Math.random()*opts.length)];f.aT=0;f.n=0;f.hits=new Set();
+      if(f.st==='swoop'){f.facing=f.x>(lo+hiX)/2?-1:1;f.swoopX=f.x}}}
+  else if(f.st==='breath'){f.aT+=dt;f.facing=L.x>f.x?1:-1;f.y+=(top-10-f.y)*Math.min(1,dt*3);
+    if(f.aT>.4&&f.aT<1.6&&f.aT>=.4+f.n*.11/sp){f.n++;dragonFire(f,L.x+rand(-40,40),L.y-40,430*sp,.12);if(f.n%3===1)sfx.shoot()}
+    if(f.aT>2){f.st='fly';f.stT=rand(1.4,2.4)/sp;f.tx=rand(lo,hiX)}}
+  else if(f.st==='swoop'){f.aT+=dt;
+    if(f.aT<.45){f.y=Math.max(GROUND-260,f.y-60*dt);if(f.aT<.05)addFx({k:'txt',x:f.x,y:f.y-200,txt:'WATCH OUT!',col:C.red,life:.8,rot:0})}
+    else{f.x+=f.facing*560*sp*dt;f.y+=(GROUND-80-f.y)*Math.min(1,dt*5);
+      for(const h of G.heroes){if(h.ko||f.hits.has(h))continue;if(Math.abs(h.x-f.x)<110&&Math.abs(h.y-60-(f.y-50))<95){f.hits.add(h);hurt(f,h,14,f.facing*420,-380,'CHOMP!')}}
+      if(f.x<lo-90||f.x>hiX+90){f.x=clamp(f.x,lo-90,hiX+90);f.st='fly';f.stT=rand(1.6,2.6)/sp;f.tx=rand(lo,hiX)}}}
+  else if(f.st==='rain'){f.aT+=dt;f.y+=(top-40-f.y)*Math.min(1,dt*3);
+    if(f.aT>.3&&f.n<6&&f.aT>=.3+f.n*.22/sp){f.n++;const tx=clamp(L.x+rand(-160,160),G.camX+40,G.camX+VW-40);
+      addProj({x:tx,y:-20,vx:0,vy:250,grav:500,team:'bad',owner:f,dmg:9,kind:'dfire',life:3,kb:180})}
+    if(f.aT>2){f.st='fly';f.stT=rand(1.4,2.2)/sp;f.tx=rand(lo,hiX)}}
+}
+function updateRoof(dt){if(!G.roof||G.phase!=='play')return;
+  const fire=G.heroes.some(h=>!h.ko&&h.pow.fire&&h.def.ranged),gem=G.pickups.some(k=>k.kind==='fire');
+  if(!fire&&!gem){G.gemT+=dt;if(G.gemT>4){G.gemT=0;const x=clamp(G.leader.x+rand(-200,200),G.camX+60,G.camX+VW-60);spawnPickup('fire',x,-20,false).falling=true;
+    addFx({k:'txt',x,y:120,txt:'FIRE GEM!',col:C.orange,life:1.2,rot:0})}}else G.gemT=0}
+function drawDragon(f){const fl=Math.sin(f.flap||0),open=f.st==='breath'&&f.aT>.3&&f.aT<1.7;
+  stroke(C.black,16,()=>{X.moveTo(-70,-50);X.quadraticCurveTo(-150,-10+fl*8,-200,-70)});blob(C.blue,()=>poly([-200,-70,-232,-92,-220,-52]));
+  X.save();X.translate(-20,-100);X.rotate(-.25-fl*.45);blob(C.dblue,()=>poly([0,0,-70,-130,-25,-110,10,-150,30,-100,75,-128,45,-8]));X.restore();
+  blob(C.black,()=>el(0,-62,100,52));blob('#6f86d6',()=>el(14,-38,72,24),.9);
+  stroke('#3d5bb5',2,()=>{for(let i=-40;i<70;i+=20){X.moveTo(i,-56);X.quadraticCurveTo(i+6,-38,i,-18)}},.7);
+  blob(C.black,()=>{rr(-56,-30,24,34,9);rr(30,-30,24,34,9)});blob('#ddd',()=>{poly([-56,4,-50,-6,-44,4]);poly([30,4,36,-6,42,4]);poly([46,4,52,-6,54,4])});
+  blob(C.blue,()=>{for(let i=0;i<5;i++){const x=-60+i*26;poly([x,-108+Math.abs(i-2)*4,x+10,-136+Math.abs(i-2)*6,x+20,-106+Math.abs(i-2)*4])}});
+  blob(C.black,()=>poly([62,-96,112,-156,146,-146,100,-72]));
+  X.save();X.translate(140,-156);X.rotate(open?.18:0);
+  blob(C.black,()=>poly([-24,-18,40,-12,64,0,58,10,-20,18]));
+  if(open){blob(C.black,()=>poly([-10,14,58,22,52,34,-12,26]));X.save();X.globalAlpha=.55+.3*Math.sin(G.t*30);blob(C.orange,()=>ci(64,18,18));X.restore();blob(C.yellow,()=>ci(64,18,8))}
+  blob(C.blue,()=>{poly([-18,-16,-46,-50,-8,-20]);poly([2,-16,-2,-54,16,-18])});
+  blob(C.yellow,()=>el(18,-4,8,6));X.fillStyle='#111';X.beginPath();X.ellipse(20,-4,2.5,5,0,0,7);X.fill();
+  stroke('#111',3,()=>{X.moveTo(8,-14);X.lineTo(28,-10)});X.fillStyle='#111';X.beginPath();X.arc(56,-2,2.5,0,7);X.fill();
+  X.restore();
+  X.save();X.translate(14,-104);X.rotate(-.05-fl*.55);blob(C.blue,()=>poly([0,0,-46,-160,2,-128,44,-182,64,-118,118,-150,76,-8]));
+  stroke(C.dblue,3,()=>{X.moveTo(0,0);X.lineTo(2,-128);X.moveTo(0,0);X.lineTo(64,-118);X.moveTo(0,0);X.lineTo(76,-8)},.8);X.restore()}
+function drawRoof(){const cx=G.camX;
+  X.fillStyle='#fde9c9';X.fillRect(0,0,VW,GROUND);X.fillStyle='#fbd9a6';X.fillRect(0,GROUND*.55,VW,GROUND*.45);
+  X.save();X.globalAlpha=.9;X.fillStyle='#fff6d6';X.beginPath();X.arc(VW*.78,110,46,0,7);X.fill();X.restore();
+  for(let i=0;i<4;i++){const x=(i*260+30-cx*.15)%(VW+200)-100;stroke('#e8c69a',3,()=>{X.arc(x,80+i*22,18,Math.PI,0);X.arc(x+30,72+i*22,22,Math.PI,0);X.arc(x+62,80+i*22,16,Math.PI,0)},.9)}
+  blob('#d9b98c',()=>{X.moveTo(0,GROUND-60);for(let x=0;x<=VW;x+=60)X.lineTo(x,GROUND-90-Math.sin((x+cx*.3)*.01)*30);X.lineTo(VW,GROUND);X.lineTo(0,GROUND);X.closePath()},.6);
+  X.save();X.translate(-cx,0);
+  const tw=G.level.len-70;blob('#9aa0a2',()=>rr(tw-48,GROUND-330,96,330,4));blob(C.blue,()=>poly([tw-60,GROUND-330,tw,GROUND-430,tw+60,GROUND-330]));
+  stroke(C.dgray,2,()=>{for(let y=GROUND-300;y<GROUND;y+=36){X.moveTo(tw-48,y);X.lineTo(tw+48,y)}},.6);
+  stroke(C.ink,3,()=>{X.moveTo(tw,GROUND-430);X.lineTo(tw,GROUND-480)});blob(C.blue,()=>poly([tw,GROUND-480,tw+40,GROUND-468,tw,GROUND-456]));
+  const x0=Math.floor((cx-40)/70)*70;
+  blob('#b4b9bb',()=>{X.rect(cx-10,GROUND-46,VW+20,46);for(let x=x0;x<cx+VW+70;x+=70)X.rect(x,GROUND-80,38,36)});
+  stroke('#8a9093',2,()=>{for(let x=x0;x<cx+VW+70;x+=70){X.rect(x,GROUND-80,38,36)}X.moveTo(cx-10,GROUND-24);X.lineTo(cx+VW+10,GROUND-24)},.7);
+  X.fillStyle='#9fa5a8';X.fillRect(cx-10,GROUND,VW+20,H-GROUND);
+  stroke('#7d8386',2,()=>{for(let y=GROUND+20;y<H;y+=28){X.moveTo(cx-10,y);X.lineTo(cx+VW+10,y)}for(let x=x0;x<cx+VW+70;x+=56){X.moveTo(x,GROUND);X.lineTo(x,GROUND+20)}},.6);
+  stroke(C.ink,3,()=>{X.moveTo(cx-10,GROUND+2);X.lineTo(cx+VW+10,GROUND+2)});
+  X.restore()}
+
 /* ---------- obstacles ---------- */
 const WALL_OFF={lock:90,gate:40};
 function wallX(o){return o.x-(o.type==='lock'?90:o.style==='gate'?40:10)}
@@ -771,7 +884,7 @@ function wrongHint(o){if(G.t-o.hintT<1.1)return;o.hintT=G.t;sfx.clink();
   const findCard=G.card&&!G.card.got&&o.need.includes(G.card.id)&&!needHero(o);
   addFx({k:'txt',x:signX(o),y:GROUND-240,txt:findCard?'Find the hero card!':`Need ${needName(o)}!`,col:C.yellow,life:1.1,rot:-.04})}
 function nearObstacle(f,r){return G.obs.find(o=>!o.solved&&f.x>wallX(o)-r-(o.type==='river'?140:0)&&f.x<o.x+o.w+40)}
-function solveObs(o){if(o.solved)return;o.solved=true;o.doneT=0;sfx.win();shake(.35,8);G.goT=3.5;
+function solveObs(o){if(o.solved)return;o.solved=true;addScore(300,signX(o),GROUND-300);o.doneT=0;sfx.win();shake(.35,8);G.goT=3.5;
   const words={river:'BRIDGE BUILT!',rocks:'SMASHED!',target:'BULLSEYE!',lock:'KA-BLAM!',thorns:'SLICED!',heavy:o.style==='gate'?'GATE OPEN!':'HEAVE-HO!',barrier:'SHATTERED!'};
   addFx({k:'txt',x:signX(o),y:GROUND-250,txt:words[o.type],col:C.yellow,life:1.5,rot:-.06});
   const cols={rocks:[C.gray,C.dgray,'#9aa'],thorns:[C.dgreen,C.green,'#a14bbf'],lock:[C.gold,C.dgray],target:[C.red,'#fff'],heavy:[C.gray,C.brown],river:[C.brown,C.green],barrier:['#6f9bff','#fff',C.gold]}[o.type];
@@ -986,11 +1099,12 @@ const cy=o=>o.y-o.h*o.scale*.55;
 function inView(o,m){return o.x>G.camX-(m||0)&&o.x<G.camX+VW+(m||0)}
 function hurt(att,tgt,dmg,kbx,kby,word){
   if(tgt.ko||tgt.invT>0||tgt.grabbedBy&&att&&att.team==='bad')return false;
+  if(tgt.dragon){if(!dragonHurtOK(att)){dragonBlock(att,tgt);return false}dmg*=1.6;sparks(tgt.x,cy(tgt),6,[C.orange,C.red,C.yellow])}
   if(tgt.team==='hero'&&tgt.pow.shield){if(G.t-(tgt.blockT||0)>.5){tgt.blockT=G.t;sfx.clink();addFx({k:'txt',x:tgt.x,y:tgt.y-150*tgt.scale,txt:'BLOCKED!',col:'#6fb6ff',life:.6,rot:0})}return false}
   if(att&&att.team==='hero'&&att!==G.leader)dmg*=.6;
   if(att&&att.team==='hero'&&att.pow){if(att.pow.giant)dmg*=2;if(att.pow.fire){dmg*=1.5;sparks(tgt.x,cy(tgt),5,[C.orange,C.red,C.yellow])}}
   const tough=tgt.team==='hero'&&tgt.pow.giant;if(tough)dmg*=.5;
-  if(tgt.team==='hero'){dmg*=DIFF[SAVE.diff].take*(tgt===G.leader?1:HARD()?.85:.55)*(1-(1-(G.heroes.length<=1?.55:G.heroes.length===2?.75:1))*DIFF[SAVE.diff].small);tgt.invT=tgt===G.leader?.45:.3}
+  if(tgt.team==='hero'){dmg*=loopDmg()*DIFF[SAVE.diff].take*(tgt===G.leader?1:HARD()?.85:.55)*(1-(1-(G.heroes.length<=1?.55:G.heroes.length===2?.75:1))*DIFF[SAVE.diff].small);tgt.invT=tgt===G.leader?.45:.3}
   tgt.hp=Math.max(0,tgt.hp-dmg);tgt.flash=.12;
   if(tgt.boss){tgt.vx+=kbx*.08}
   else if(!tgt.ledge&&!tgt.grabbedBy&&!tough){tgt.hurtT=.25;if(tgt.act&&!tgt.act.armor){if(tgt.act.grab)tgt.act.grab.grabbedBy=null;tgt.act=null}
@@ -1003,9 +1117,12 @@ function hurt(att,tgt,dmg,kbx,kby,word){
   sfx.hit();
   if(tgt.hp<=0)knockOut(tgt,kbx);
   return true}
+const PTS={ax:100,hammer:150,muscle:200,cross:150,bomb:150,king:4000,dragon:6000};
+function addScore(n,x,y){const v=Math.round(n*scoreMult());G.score+=v;if(x!=null)addFx({k:'txt',x,y,txt:'+'+v,col:C.gold,life:.8,rot:0})}
 function knockOut(t,kbx){
+  if(t.team==='bad')addScore(t.boss&&t.kind!=='king'&&t.kind!=='dragon'?1500:(PTS[t.kind]||100),t.x,t.y-t.h*t.scale-40);
   if(t.act&&t.act.grab){t.act.grab.grabbedBy=null}
-  t.ko=true;t.koT=0;t.act=null;t.grabbedBy=null;
+  t.ko=true;t.koT=0;t.act=null;t.grabbedBy=null;if(t.dragon){t.fly=false;sfx.boom();shake(.8,14);G.slow=1.2}
   if(t.ledge)t.ledge=false;
   t.vy=-380;t.grounded=false;t.vx=(kbx>=0?1:-1)*200;
   if(t.team==='bad'){
@@ -1024,7 +1141,8 @@ function nearestFoe(f,maxD,front){let best=null,bd=1e9;
   for(const o of foesOf(f)){if(o.ko||o.grabbedBy)continue;if(f.team==='hero'&&!inView(o,10))continue;
     const dx=o.x-f.x;if(front&&dx*f.facing<-10)continue;const d=Math.abs(dx)+Math.abs(o.y-f.y)*.5;
     if(d<bd&&d<maxD){bd=d;best=o}}return best}
-function aimVel(f,sx,sy,speed,maxA){const t=nearestFoe(f,760,true);let a=0;
+function aimVel(f,sx,sy,speed,maxA){let t=nearestFoe(f,760,true);let a=0;
+  const dr=G.roof&&G.bads.find(b=>b.dragon&&!b.ko);if(dr&&f.pow&&f.pow.fire&&f.def.ranged&&Math.sign(dr.x-sx)===f.facing){t=dr;maxA=1.45}
   if(t){a=Math.atan2(cy(t)-sy,Math.max(30,(t.x-sx)*f.facing));a=clamp(a,-maxA,maxA)}
   return[Math.cos(a)*speed*f.facing,Math.sin(a)*speed,a]}
 function addProj(o){G.projs.push(Object.assign({life:2,kb:150},o))}
@@ -1037,7 +1155,8 @@ function aoe(f,x,r,dmg,kby,word,groundOnly){for(const o of foesOf(f)){if(o.ko||o
 
 function startAttack(f){const A=f.def.attack;
   if(f===G.leader&&!f.inp.l&&!f.inp.r){const n=nearestFoe(f,280,false);if(n)f.facing=Math.sign(n.x-f.x)||f.facing}
-  else if(f===G.leader&&!nearestFoe(f,420,true)){const n=nearestFoe(f,320,false);if(n)f.facing=Math.sign(n.x-f.x)||f.facing}
+  {const dr=G.roof&&f===G.leader&&f.pow.fire&&f.def.ranged&&G.bads.find(b=>b.dragon&&!b.ko);if(dr)f.facing=Math.sign(dr.x-f.x)||f.facing}
+  if(f===G.leader&&!nearestFoe(f,420,true)&&!(G.roof&&f.pow.fire)){const n=nearestFoe(f,320,false);if(n)f.facing=Math.sign(n.x-f.x)||f.facing}
   if(f===G.leader){const o=nearObstacle(f,230);if(o&&!o.need.includes(f.def.id)&&!G.bads.some(b=>!b.ko&&Math.abs(b.x-f.x)<300))wrongHint(o)}
   f.act={kind:'atk',t:0,dur:A.dur,fired:false,whoosh:false};f.atkCD=A.cd}
 function startSpecial(f){f.act={kind:'sp',t:0,dur:f.def.special.dur,armor:true,fired:false,next:0};f.spCD=f.def.special.cd;
@@ -1107,7 +1226,7 @@ const SPECIALS={
 /* bad guy attacks */
 function startBadAttack(f){const d=f.def;
   f.act={kind:'atk',t:0,dur:d.dur*(f.boss?1.15:1),hitAt:d.wind*(f.boss?1.15:1),done:false};
-  f.atkCD=rand(d.cd[0],d.cd[1])*DIFF[SAVE.diff].ecd+f.act.dur;}
+  f.atkCD=rand(d.cd[0],d.cd[1])*DIFF[SAVE.diff].ecd*loopCd()+f.act.dur;}
 function startBossPower(f){let p=f.boss.power;if(p==='king')p=['slam','charge','orbs'][Math.floor(Math.random()*3)];
   f.act={kind:'pw',p,t:0,dur:p==='slam'?1.5:p==='spin'?1.8:p==='orbs'?1.4:1.6,armor:true,hits:new Set(),next:.45};f.pwCD=rand(4.5,6.2)*(HARD()?.75:1)}
 function doBadAttack(f,a){const d=f.def;if(!f.ledge)f.vx=0;
@@ -1173,6 +1292,7 @@ function updateActor(f,dt){
   if(f.grabbedBy)return;
   f.hpShow+=(f.hp-f.hpShow)*Math.min(1,dt*6);f.flash-=dt;
   if(f.team==='hero')updatePowers(f,dt);
+  if(f.fly&&!f.ko){updateDragon(f,dt);return}
   if(f.ko){f.koT+=dt;physics(f,dt);if(f.grounded)f.vx*=Math.pow(.02,dt);
     if(f.team==='hero'&&f.koT>DIFF[SAVE.diff].revive&&G.phase==='play'){f.ko=false;f.hp=f.maxHp*.5;f.invT=1.5;f.y=GROUND;f.vy=0;
       addFx({k:'txt',x:f.x,y:f.y-150,txt:'Back up!',col:C.yellow,life:.9,rot:.05})}
@@ -1221,7 +1341,7 @@ function updateWaves(dt){
   const lv=G.level,L=G.leader;
   if(!G.lock&&G.waveIdx<lv.waves.length){const w=lv.waves[G.waveIdx];
     if(L.x>w.x-200){G.lock=w;G.goT=0;let gl=w.ground.slice(0,Math.max(2,G.heroes.length+1));
-      if(HARD()){const want=Math.max(w.ground.length+DIFF.hard.extra,Math.round(G.heroes.length*1.4)+1+Math.floor(G.levelIdx/2));gl=[];
+      if(HARD()){const D=DIFF[SAVE.diff],want=Math.max(w.ground.length+D.extra,Math.round(G.heroes.length*D.crowd)+1+Math.floor(G.levelIdx/2)+Math.min(3,LOOP()));gl=[];
         for(let i=0;i<want;i++){let k=w.ground[i%w.ground.length];if(i>=w.ground.length&&i%2)k=k.endsWith('<')?k.slice(0,-1):k+'<';gl.push(k)}}
       G.spawnQ=gl.map((k,i)=>({k,t:.2+i*(HARD()?.45:.7)}));
       if(w.boss){G.spawnQ.push({k:w.boss.base,boss:w.boss,t:.4});banner(w.boss.name+'!','',2)}}}
@@ -1240,14 +1360,15 @@ function updateWaves(dt){
     if(!G.spawnQ.length&&!G.bads.some(b=>b.wave===G.waveIdx&&!b.ko)){
       G.lock=null;G.waveIdx++;
       if(HARD())for(const h of G.heroes)if(h.ko){reviveHero(h);h.hp=h.maxHp*.5}
-      if(w.boss&&G.level.final)startVictory();
+      if(w.dragon){G.roof=false;G.flash=1;G.dragonDone=true;startVictory()}
+      else if(w.boss&&G.level.final)startDragon();
       else if(w.boss){G.cageReady=true;banner(`Free ${G.prisoner.def.name}!`,'Run to the cage',2.4)}
       else{G.goT=4;if(G.heroes.some(h=>!h.ko&&h.hp<h.maxHp*.6))spawnPickup('heart',clamp(L.x+90,G.camX+60,G.camX+VW-60)).drop=true}}}
 }
 function updateCamera(dt){const lv=G.level,L=G.leader;let target;
   if(G.lock)target=G.lock.x-VW/2;else target=Math.max(G.camX,L.x-VW*.42);
   target=clamp(target,0,lv.len-VW);G.camX+=(target-G.camX)*Math.min(1,dt*4)}
-function startRescue(){G.phase='rescue';G.rt=0;for(const h of G.heroes){h.inp={};if(h.ko){h.ko=false;h.hp=h.maxHp*.5;h.y=GROUND}}}
+function startRescue(){addScore(1000,G.cageX,GROUND-300);G.phase='rescue';G.rt=0;for(const h of G.heroes){h.inp={};if(h.ko){h.ko=false;h.hp=h.maxHp*.5;h.y=GROUND}}}
 function updateRescue(dt){G.rt+=dt;const p=G.prisoner,rt=G.rt;
   if(rt>.9&&p.chained){p.chained=false;p.vy=-420;sfx.chain();
     const top=GROUND-230;for(const [x,y] of [[G.cageX-50,top+30],[G.cageX+50,top+30],[G.cageX-40,GROUND-10],[G.cageX+40,GROUND-10]])sparks(x,y,6,['#8a8f8f','#b9bdbd'])}
@@ -1258,12 +1379,16 @@ function updateRescue(dt){G.rt+=dt;const p=G.prisoner,rt=G.rt;
   for(const h of G.heroes){h.vx=0;physics(h,dt)}
   if(rt>(p.def.id==='liam'?5:4.2)&&!G.ended){G.ended=true;finishLevel()}}
 
-function finishLevel(){const i=G.levelIdx;SAVE.done=Math.max(SAVE.done,i+1);const pz=LEVELS[i].prisoner;if(pz&&!SAVE.owned.includes(pz))SAVE.owned.push(pz);persist();document.body.classList.remove('playing');G.mode='over';
-  if(i===LEVELS.length-1){showFinale();return}
+function bankScore(i){const lifeBonus=HARD()?G.lives*500:0;addScore(1000+lifeBonus);const p=curP();let best=0;
+  if(p){p.best=p.best||[];best=p.best[i]||0;if(G.score>best)p.best[i]=G.score;p.high=p.best.reduce((a,x)=>a+(x||0),0)}
+  return{score:G.score,best:Math.max(best,G.score),newBest:G.score>best}}
+function scoreLine(b){return `<p class="score">★ ${b.score.toLocaleString()} points${b.newBest?' <b>New best!</b>':` · Best ${b.best.toLocaleString()}`}</p>`}
+function finishLevel(){const i=G.levelIdx;const bs=bankScore(i);G.lastBank=bs;SAVE.done=Math.max(SAVE.done,i+1);const pz=LEVELS[i].prisoner;if(pz&&!SAVE.owned.includes(pz))SAVE.owned.push(pz);persist();document.body.classList.remove('playing');G.mode='over';
+  if(i===LEVELS.length-1){SAVE.loop=(SAVE.loop||0)+1;SAVE.done=0;SAVE.owned=[];persist();showFinale(bs);return}
   const d=heroById(LEVELS[i].prisoner);
   showOverlay(`<div class="sheet small"><h2>${d.name} is free!</h2>
   <canvas class="winart" data-art="hero" data-id="${d.id}" data-win="1"></canvas>
-  <p class="lede">${d.name} joins the team and fights with ${d.weapon}. Next up: ${LEVELS[i+1].name}.</p>
+  ${scoreLine(bs)}<p class="lede">${d.name} joins the team and fights with ${d.weapon}. Next up: ${LEVELS[i+1].name}.</p>
   <div class="row"><button class="go" data-act="next">Next level</button><button class="go alt" data-act="map">Map</button></div></div>`,true)}
 
 function update(dt){
@@ -1294,7 +1419,7 @@ function update(dt){
     const ob=obsShot(p);if(ob){shotHitsObs(p,ob);p.dead=true;continue}
     const targets=p.team==='hero'?G.bads:G.heroes;
     for(const o of targets){if(o.ko||o.grabbedBy||(p.hitSet&&p.hitSet.has(o)))continue;const hw=o.w*o.scale*.5+6;
-      if(Math.abs(p.x-o.x)<hw&&p.y>o.y-o.h*o.scale&&p.y<o.y+6){hurt(p.owner,o,p.dmg,Math.sign(p.vx)*p.kb,-140,p.word);
+      if(Math.abs(p.x-o.x)<hw&&p.y>o.y-o.h*o.scale&&p.y<o.y+6){G.shotKind=p.kind;hurt(p.owner,o,p.dmg,Math.sign(p.vx)*p.kb,-140,p.word);G.shotKind=null;
         if(p.pierce)p.hitSet.add(o);else{p.dead=true;break}}}
     if(p.y>GROUND+2&&!p.dead){p.dead=true;sparks(p.x,GROUND,3,['#c9c2b2'])}
     if(p.life<=0||p.x<G.camX-120||p.x>G.camX+VW+120)p.dead=true;}
@@ -1307,6 +1432,7 @@ function update(dt){
   G.shocks=G.shocks.filter(s=>s.life>0&&s.x>G.camX-60&&s.x<G.camX+VW+60);
   if(G.wipeT>0&&G.phase==='play'){G.wipeT-=dt;if(G.wipeT<=0){for(const h of G.heroes)reviveHero(h);sfx.heal();
     for(const b of G.bads)if(!b.ko&&!b.ledge&&!b.boss){b.vx=Math.sign(b.x-G.leader.x||1)*420;b.hurtT=.5}}}
+  G.flash=Math.max(0,(G.flash||0)-dt*1.1);updateRoof(dt);
   updatePickups(dt);updateCards(dt);updateObstacles(dt);
   for(const e of G.fx){e.t+=dt;if(e.k==='p'){e.vy+=(e.g==null?900:e.g)*dt;e.x+=e.vx*dt;e.y+=e.vy*dt}}
   G.fx=G.fx.filter(e=>e.t<e.life);
@@ -1346,6 +1472,7 @@ function drawLedge(x,y,theme){
     blob(C.dbrown,()=>rr(x-60,y-2,120,10,3))}
   else{stroke(C.ink,3,()=>{X.moveTo(x+56,GROUND);X.lineTo(x+56,y-120)});stroke(C.gray,4,()=>{X.moveTo(x-60,y+3);X.lineTo(x+56,y+3)})}}
 function drawWorld(){
+  if(G.roof){drawRoof();return}
   const lv=G.level,th=lv.theme,cx=G.camX;
   X.fillStyle=th==='castle'?'#eef0ef':C.paper;X.fillRect(0,0,VW,H);
   // far layer
@@ -1449,8 +1576,10 @@ function drawHUD(){
     drawPowerIcon(k,ix,iy,.62)});
   X.font=`22px ${FONT_BIG}`;X.textAlign='right';X.lineWidth=5;X.strokeStyle=C.paper;const lt=PORT()?`Level ${G.levelIdx+1}`:`Level ${G.levelIdx+1}: ${G.level.name}`;
   const lx=VW-84;X.strokeText(lt,lx,32);X.fillStyle='#2c3337';X.fillText(lt,lx,32);
-  if(HARD()){for(let i=0;i<DIFF.hard.lives;i++){X.save();X.globalAlpha=i<G.lives?1:.22;drawPowerIcon('heart',lx-12-i*28,58,.62);X.restore()}
-    X.font=`18px ${FONT_BIG}`;X.textAlign='right';X.lineWidth=4;X.strokeStyle=C.paper;X.strokeText('HARD',lx-12-DIFF.hard.lives*28,64);X.fillStyle=C.red;X.fillText('HARD',lx-12-DIFF.hard.lives*28,64)}
+  {const nl=HARD()?DIFF[SAVE.diff].lives:0;for(let i=0;i<nl;i++){X.save();X.globalAlpha=i<G.lives?1:.22;drawPowerIcon('heart',lx-12-i*28,58,.62);X.restore()}
+    const tag=(SAVE.diff!=='easy'?DIFF_NAME[SAVE.diff].toUpperCase():'')+(LOOP()?` ★${LOOP()+1}`:'');
+    if(tag){const tx=lx-12-nl*28+(nl?0:12);X.font=`18px ${FONT_BIG}`;X.textAlign='right';X.lineWidth=4;X.strokeStyle=C.paper;X.strokeText(tag,tx,64);X.fillStyle=C.red;X.fillText(tag,tx,64)}}
+  X.font=`28px ${FONT_BIG}`;X.textAlign='right';X.lineWidth=6;X.strokeStyle=C.paper;const sc='★ '+G.score.toLocaleString();X.strokeText(sc,lx,96);X.fillStyle=C.dgold;X.fillText(sc,lx,96);
   // boss bar
   const boss=G.bads.find(b=>b.boss&&!b.ko);
   if(boss){const bw2=Math.min(440,VW-80),bx=(VW-bw2)/2,by=H-40,fr=Math.max(0,boss.hpShow/boss.maxHp);
@@ -1503,6 +1632,7 @@ function render(){
     else if(p.kind==='arrow')drawArrow(p.x,p.y,ang,.9);
     else if(p.kind==='ebolt')drawEBolt(p.x,p.y,ang,.9);
     else if(p.kind==='gold'){const d=Math.sign(p.vx);stroke(C.gold,9,()=>{X.arc(p.x-d*20,p.y,46,d>0?-1.1:Math.PI-1.1+2.2-2.2,d>0?1.1:Math.PI+1.1)},.9);stroke('#fff',3,()=>{X.arc(p.x-d*20,p.y,46,d>0?-.7:Math.PI-.7,d>0?.7:Math.PI+.7)},.8)}
+    else if(p.kind==='dfire'){X.save();X.globalAlpha=.45;X.fillStyle=C.orange;X.beginPath();X.arc(p.x,p.y,17,0,7);X.fill();X.restore();blob(C.orange,()=>ci(p.x,p.y,10));blob(C.yellow,()=>ci(p.x-2,p.y-2,5))}
     else if(p.kind==='orb'){X.save();X.globalAlpha=.4;X.fillStyle='#6f9bff';X.beginPath();X.arc(p.x,p.y,18,0,7);X.fill();X.restore();blob('#3b6fd1',()=>ci(p.x,p.y,10));blob('#c9d8ff',()=>ci(p.x-3,p.y-3,4))}
     else if(p.kind==='bomb'){blob(C.black,()=>ci(p.x,p.y-10,12));if(Math.floor(G.t*14)%2)blob(C.yellow,()=>ci(p.x+8,p.y-24,4))}
     else if(p.kind==='pellet'){stroke('rgba(75,79,79,.5)',3,()=>{X.moveTo(p.x-p.vx*.03,p.y-p.vy*.03);X.lineTo(p.x,p.y)});blob(C.black,()=>ci(p.x,p.y,4))}
@@ -1514,6 +1644,7 @@ function render(){
       X.save();X.globalAlpha=Math.min(1,(e.life-e.t)/.2);X.translate(e.x,e.y-e.t*30);X.scale(s,s);bigText(e.txt,0,0,34,e.col,e.rot);X.restore()}}
   X.restore();
   X.setTransform(SC,0,0,SC,0,0);drawHUD();
+  if(G.flash>0){X.fillStyle=`rgba(255,255,255,${Math.min(1,G.flash)})`;X.fillRect(0,0,VW,H)}
 }
 
 cv.addEventListener('pointerdown',e=>{if(G.mode!=='level'||G.phase!=='play'||G.paused)return;ensureAudio();
@@ -1547,10 +1678,12 @@ function sizeArt(){const dpr=Math.min(2.5,window.devicePixelRatio||1);
 const soundBtn=()=>`<button class="link" data-act="sound">${muted?'Sound is off, tap to turn on':'Sound is on, tap to turn off'}</button>`;
 let resetArmed=false;
 function showTitle(){G.mode='menu';document.body.classList.remove('playing');resetArmed=false;
+  if(!PROF.cur){showPlayers();return}const me=curP();
   showOverlay(`<div class="sheet"><h1>Save King Liam</h1>
+  <p class="who">Playing as <b>${esc(me.name)}</b> · ★ ${(me.high||0).toLocaleString()}${LOOP()?` · Adventure ${LOOP()+1}`:''} <button class="link inline" data-act="players">Switch player</button></p>
   <p class="lede">The bad guys stormed in and carried off King Liam and his best warriors. Lead the heroes into battle, free them all, then take down the Bad King!</p>
   <canvas class="art" data-art="title"></canvas>
-  <button class="go" data-act="map">${SAVE.done>0&&SAVE.done<LEVELS.length?'Keep going':'Start the rescue'}</button>
+  <div class="row"><button class="go" data-act="map">${SAVE.done>0&&SAVE.done<LEVELS.length?'Keep going':LOOP()?`Start Adventure ${LOOP()+1}`:'Start the rescue'}</button><button class="go alt" data-act="scores">High scores</button></div>
   ${SAVE.done>0?'<button class="link" data-act="reset">Start over from level 1</button>':''}${soundBtn()}</div>`)}
 function showMap(){G.mode='menu';document.body.classList.remove('playing');
   const cards=LEVELS.map((l,i)=>{const locked=i>SAVE.done,freed=i<SAVE.done;
@@ -1564,19 +1697,61 @@ function showMap(){G.mode='menu';document.body.classList.remove('playing');
   showOverlay(`<div class="sheet"><h2>Rescue mission</h2>
   <p class="lede">${SAVE.done>=LEVELS.length?'You beat the Bad King and the castle is yours! Play any level again.':'Win a level to free the prisoner in the cage. They join your team!'}</p>
   <div class="cards lv">${cards}</div><button class="link" data-act="title">Back</button></div>`)}
+/* ---------- players, high scores and online sync ---------- */
+const API='/api/players';let syncTimer=0,ONLINE=null;
+const apiOK=()=>location.protocol.startsWith('http');
+const cleanName=n=>String(n||'').replace(/[^\p{L}\p{N} '_-]/gu,'').replace(/\s+/g,' ').trim().slice(0,16);
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function queueSync(){if(!apiOK())return;clearTimeout(syncTimer);syncTimer=setTimeout(syncNow,1200)}
+const progOf=s=>s?[s.rev||0,s.loop||0,s.done||0]:[-1,0,0];
+function cmpProg(a,b){const x=progOf(a),y=progOf(b);for(let i=0;i<3;i++)if(x[i]!==y[i])return x[i]-y[i];return 0}
+async function apiFetch(opts){const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),6000);
+  try{const r=await fetch(API+(opts&&opts.q||''),Object.assign({signal:ctl.signal,cache:'no-store'},opts&&opts.init));ONLINE=r.ok;return r.ok?await r.json():null}
+  catch(e){ONLINE=false;return null}finally{clearTimeout(t)}}
+async function syncNow(){const p=curP();if(!p||!apiOK())return;
+  const j=await apiFetch({init:{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:p.name,save:p.save,best:p.best||[],updated:p.updated})}});
+  const q=j&&j.player;if(!q||curP()!==p)return;
+  p.best=q.best||p.best;p.high=q.high||0;
+  if(q.save&&cmpProg(q.save,p.save)>0&&G.mode!=='level'){const d=SAVE.diff;Object.assign(SAVE,normalizeSave(q.save));SAVE.diff=d;p.save=SAVE;
+    if(document.querySelector('[data-art=title]'))showTitle()}
+  try{localStorage.setItem('sklProfiles',JSON.stringify(PROF))}catch(e){}}
+function selectPlayer(id){PROF.cur=id;SAVE=normalizeSave(curP().save);persist();showTitle();syncNow()}
+function addPlayer(name){name=cleanName(name);if(!name)return false;
+  const ex=Object.values(PROF.players).find(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(ex){selectPlayer(ex.id);return true}
+  const id=uid();PROF.players[id]={id,name,save:newSave(),best:[],high:0,updated:0};selectPlayer(id);return true}
+function showPlayers(){G.mode='menu';document.body.classList.remove('playing');
+  const ps=Object.values(PROF.players).sort((a,b)=>(b.updated||0)-(a.updated||0));
+  showOverlay(`<div class="sheet"><h2>Who\u2019s playing?</h2>
+  ${ps.length?`<div class="cards plist">${ps.map(p=>`<button class="card" data-player="${p.id}"><div class="nm">${esc(p.name)}</div>
+    <div class="desc">★ ${(p.high||0).toLocaleString()} points</div><div class="sp">${p.save.loop?`Adventure ${p.save.loop+1} · `:''}${p.save.done>=LEVELS.length?'All levels done':`Level ${Math.min(LEVELS.length,(p.save.done||0)+1)}`}</div></button>`).join('')}</div>`:'<p class="lede">Add a player to start. Everyone gets their own heroes, levels and score.</p>'}
+  <form class="newp" id="newp"><label for="pname">New player</label><div class="row"><input id="pname" maxlength="16" placeholder="First name or nickname" autocomplete="off" enterkeyhint="go"><button class="go" type="submit">Add</button></div></form>
+  <p class="note">Names show on the high score list, so a first name or nickname works best.</p>
+  ${PROF.cur?'<button class="link" data-act="title">Back</button>':''}</div>`)}
+async function showScores(){G.mode='menu';document.body.classList.remove('playing');
+  const local=()=>Object.values(PROF.players).map(p=>({name:p.name,high:p.high||0,loop:p.save.loop||0,done:p.save.done||0}));
+  const draw=(list,online)=>{list=list.slice().sort((a,b)=>b.high-a.high);const me=curP()&&curP().name.toLowerCase();
+    showOverlay(`<div class="sheet"><h2>High scores</h2>
+    ${list.length?`<ol class="board">${list.map((p,i)=>`<li class="${p.name.toLowerCase()===me?'me':''}"><span class="rk">${i===0?'👑':i+1}</span><span class="pn">${esc(p.name)}</span><span class="pa">${p.loop?`Adventure ${p.loop+1}`:''}</span><span class="ps">★ ${(p.high||0).toLocaleString()}</span></li>`).join('')}</ol>`:'<p class="lede">No scores yet. Beat a level to get on the board!</p>'}
+    <p class="note">${online?'Everyone\u2019s scores, from every device. Your score is your best result on each level, added up.':'Showing players on this device. The online high score list isn\u2019t connected yet.'}</p>
+    <button class="link" data-act="title">Back</button></div>`)};
+  draw(local(),false);
+  if(apiOK()){const j=await apiFetch({});if(j&&j.players&&ov.querySelector('.board, .lede')&&ov.textContent.includes('High scores')){
+    const m=new Map(j.players.map(p=>[p.name.toLowerCase(),p]));for(const p of local())if(!m.has(p.name.toLowerCase()))m.set(p.name.toLowerCase(),p);draw([...m.values()],true)}}}
 let pickLevel=0;
 function showPick(i){pickLevel=i;const first=!SAVE.owned.length;const team=first?HEROES.filter(h=>ORIG.includes(h.id)):HEROES.filter(h=>SAVE.owned.includes(h.id)&&h.id!==LEVELS[i].prisoner);
   showOverlay(`<div class="sheet"><h2>${first?'Pick your first hero':'Who leads the team?'}</h2>
   <p class="lede">${first?'You start on your own. Find hero cards along the way to build your team!':'You control the leader. Everyone else fights alongside, and you can switch heroes any time.'}</p>
-  <div class="chips"><span>How tough:</span>${['easy','normal','hard'].map(d=>`<button class="chip ${SAVE.diff===d?'on':''}" data-diff="${d}">${{easy:'Easy',normal:'Normal',hard:'Hard'}[d]}</button>`).join('')}</div>
+  <div class="chips"><span>How tough:</span>${['easy','normal','hard','impossible'].map(d=>`<button class="chip ${SAVE.diff===d?'on':''}" data-diff="${d}">${DIFF_NAME[d]}</button>`).join('')}</div>
   <div class="cards">${team.map(d=>`<button class="card" data-pick="${d.id}"><canvas data-art="hero" data-id="${d.id}"></canvas>
     <div class="nm">${d.name}</div><div class="desc">${d.blurb}</div><div class="sp">★ ${d.special.name}</div></button>`).join('')}</div>
   <button class="link" data-act="map">Back to the map</button></div>`)}
-function showFinale(){sfx.win();
+function showFinale(bs){sfx.win();const n=LOOP()+1;
   showOverlay(`<div class="sheet"><h1>The castle is yours!</h1>
   <canvas class="art" data-art="finale"></canvas>
-  <p class="lede">The heroes freed Blak Beard, Will, Fill and King Liam, then beat the Bad King and took over his castle. The whole town cheered, because he was the worst king ever!</p>
-  <div class="row"><button class="go" data-act="map">Play a level again</button><button class="go alt" data-act="title">Title</button></div></div>`,true)}
+  ${bs?scoreLine(bs):''}<p class="lede">The heroes freed Blak Beard, Will, Fill and King Liam, beat the Bad King and his dragon, and took over the castle. The whole town cheered, because he was the worst king ever!</p>
+  <p class="lede"><b>Adventure ${n} unlocked!</b> Play it all again from level 1. The bad guys are tougher, and every point is worth more.</p>
+  <div class="row"><button class="go" data-act="map">Start Adventure ${n}</button><button class="go alt" data-act="scores">High scores</button></div></div>`,true)}
 function togglePause(){
   if(G.paused){G.paused=false;hideOverlay();return}
   if(G.mode!=='level')return;G.paused=true;for(const k in touch)touch[k]=false;
@@ -1584,20 +1759,24 @@ function togglePause(){
   <div class="row"><button class="go" data-act="resume">Keep playing</button><button class="go alt" data-act="quit">Leave level</button></div>${soundBtn()}</div>`,true)}
 document.getElementById('pauseBtn').addEventListener('click',togglePause);
 
+ov.addEventListener('submit',e=>{e.preventDefault();const inp=ov.querySelector('#pname');if(inp&&!addPlayer(inp.value)){inp.focus();inp.placeholder='Type a name first'}});
 ov.addEventListener('click',e=>{ensureAudio();
   const lvB=e.target.closest('[data-level]'),pk=e.target.closest('[data-pick]'),df=e.target.closest('[data-diff]'),ac=e.target.closest('[data-act]');
   if(df){SAVE.diff=df.dataset.diff;persist();sfx.pick();ov.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c===df));return}
   if(lvB&&!lvB.disabled){sfx.pick();showPick(+lvB.dataset.level);return}
   if(pk){sfx.pick();startLevel(pickLevel,pk.dataset.pick);return}
+  const pl=e.target.closest('[data-player]');if(pl){sfx.pick();selectPlayer(pl.dataset.player);return}
   if(!ac)return;const a=ac.dataset.act;sfx.pick();
-  if(a==='map')showMap();
+  if(a==='players')showPlayers();
+  else if(a==='scores')showScores();
+  else if(a==='map')showMap();
   else if(a==='title')showTitle();
   else if(a==='next'){const n=Math.min(G.levelIdx+1,LEVELS.length-1);showPick(n)}
   else if(a==='retry'){G.failShown=false;G.ended=false;startLevel(G.levelIdx,G.leader.def.id)}
   else if(a==='resume')togglePause();
   else if(a==='quit'){G.paused=false;showMap()}
   else if(a==='reset'){if(!resetArmed){resetArmed=true;ac.textContent='Tap again to erase progress and start over';return}
-    SAVE.done=0;SAVE.owned=[];persist();showTitle()}
+    SAVE.done=0;SAVE.owned=[];SAVE.rev=(SAVE.rev||0)+1;persist();showTitle()}
   else if(a==='sound'){muted=!muted;ac.textContent=muted?'Sound is off, tap to turn on':'Sound is on, tap to turn off'}
 });
 const _start=startLevel;startLevel=function(i,id){G.failShown=false;G.ended=false;_start(i,id)};
